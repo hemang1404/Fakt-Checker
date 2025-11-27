@@ -1,7 +1,17 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import re
+
+
+# Sentence transformers for similarity (lazy loading)
+try:
+    from sentence_transformers import SentenceTransformer, util
+    sbert = None  # Will be loaded on first use
+except Exception:
+    SentenceTransformer = None
+    util = None
 
 # Optional spaCy entity extraction
 try:
@@ -65,9 +75,40 @@ def get_wikipedia_evidence(query: str):
 
     return {"source": None, "text": "No relevant evidence found", "score": 0.0}
 
+def evidence_similarity(claim: str, evidence_text: str) -> float:
+    global sbert
+    
+    # Lazy load the model on first use
+    if sbert is None and SentenceTransformer is not None:
+        try:
+            sbert = SentenceTransformer('all-MiniLM-L6-v2')
+        except Exception:
+            return 0.0
+    
+    if sbert is None:
+        return 0.0
+        
+    try:
+        a= sbert.encode(claim, convert_to_tensor=True)
+        b= sbert.encode(evidence_text, convert_to_tensor=True)
+        sim= float(util.cos_sim(a, b).item())
+        sim = max(0.0, min(1.0, (sim + 1)/2))
+        return sim
+    except Exception:
+        return 0.0
+
 
 class ClaimReq(BaseModel):
     claim: str
+    
+    @validator('claim')
+    def validate_claim(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError('Claim cannot be empty')
+        if len(v) > 2000:
+            raise ValueError('Claim too long (max 2000 characters)')
+        return v
 
 
 app = FastAPI(title="Fakt-Checker")
@@ -97,9 +138,10 @@ def verify_text(req: ClaimReq):
     negative_words = ["fake", "hoax", "lie", "false", "not", "never"]
     doubt_words = ["maybe", "unclear", "rumor", "rumour", "suspected", "probably"]
 
-    pos_hits = sum(word in lower for word in positive_words)
-    neg_hits = sum(word in lower for word in negative_words)
-    doubt_hits = sum(word in lower for word in doubt_words)
+    # Use word boundaries to avoid false matches (e.g., "not" in "note")
+    pos_hits = sum(1 for w in positive_words if re.search(rf'\b{re.escape(w)}\b', lower))
+    neg_hits = sum(1 for w in negative_words if re.search(rf'\b{re.escape(w)}\b', lower))
+    doubt_hits = sum(1 for w in doubt_words if re.search(rf'\b{re.escape(w)}\b', lower))
 
     score = 0.5 + 0.2 * (pos_hits - neg_hits)
     score = max(0.0, min(1.0, score))
@@ -115,15 +157,34 @@ def verify_text(req: ClaimReq):
     wiki = get_wikipedia_evidence(keyword)
     evidence = [wiki]
 
+    # Calculate similarity between claim and evidence
+    similarity = evidence_similarity(claim, wiki.get("text", ""))
+    
+    # Combine heuristic score with evidence similarity
+    if similarity > 0.0:
+        # Weight evidence similarity higher (70%) than heuristic (30%)
+        final_score = 0.7 * similarity + 0.3 * score
+        
+        # Update verdict based on similarity
+        if similarity > 0.7:
+            verdict = "SUPPORTED"
+        elif similarity < 0.3:
+            verdict = "REFUTED"
+        else:
+            verdict = "NOT_ENOUGH_INFO"
+    else:
+        final_score = score
+
     explanation = (
-        f"Simple heuristic verdict for claim: {claim[:200]} "
-        f"(pos_hits={pos_hits}, neg_hits={neg_hits}, "
-        f"doubt_hits={doubt_hits}, keyword={keyword})"
+        f"Verdict for claim: {claim[:200]} | "
+        f"Heuristic (pos={pos_hits}, neg={neg_hits}) | "
+        f"Evidence similarity: {similarity:.2f} | "
+        f"Keyword: {keyword}"
     )
 
     return {
         "verdict": verdict,
-        "score": round(score, 3),
+        "score": round(final_score, 3),
         "evidence": evidence,
         "explanation": explanation,
     }
