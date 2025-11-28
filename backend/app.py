@@ -3,7 +3,9 @@ from pydantic import BaseModel, validator
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import re
-
+import logging
+logging.basicConfig(level=logging.INFO)
+logger= logging.getLogger(__name__)
 
 # Sentence transformers for similarity (lazy loading)
 try:
@@ -97,6 +99,47 @@ def evidence_similarity(claim: str, evidence_text: str) -> float:
     except Exception:
         return 0.0
 
+def is_factual(text: str) -> bool:
+    """
+    Simple rule-based detector for factual vs. personal/question claims.
+    Returns True when the text *looks like* a factual assertion we can check.
+    """
+    if not text:
+        return False
+
+    c = text.strip().lower()
+
+    # Ends with a question mark -> not factual
+    if c.endswith("?"):
+        return False
+
+    # Personal / intention patterns -> not factual
+    personal_prefixes = (
+        r"^i want", r"^i will", r"^i'm going", r"^i am going", r"^i plan",
+        r"^can i", r"^should i", r"^do i", r"^how do i", r"^how can i",
+        r"^i have to", r"^i'd like", r"^i would like"
+    )
+    for pat in personal_prefixes:
+        if re.match(pat, c):
+            return False
+
+    # Question-style words -> not factual
+    if re.match(r'^(how|why|where|when|who|what|does|do|did)\b', c):
+        return False
+
+    # Opinion words -> not factual
+    if re.search(r"\b(i think|i believe|i feel|maybe|probably|possibly|might be)\b", c):
+        return False
+
+    # Factual verbs / structures -> likely factual
+    if re.search(r'\b(is|are|was|were|has|have|had|consists|causes|caused|leads|led|results)\b', c):
+        return True
+
+    # Conservative default -> not factual
+    return False
+
+
+
 
 class ClaimReq(BaseModel):
     claim: str
@@ -153,27 +196,49 @@ def verify_text(req: ClaimReq):
     else:
         verdict = "NOT_ENOUGH_INFO"
 
-    keyword = extract_entity(claim)
-    wiki = get_wikipedia_evidence(keyword)
-    evidence = [wiki]
+    # determine if claim is factual
+    factual = is_factual(claim)
+    logger.info(f"Claim: '{claim[:60]}' | factual={factual} | pos={pos_hits} neg={neg_hits}")
 
-    # Calculate similarity between claim and evidence
-    similarity = evidence_similarity(claim, wiki.get("text", ""))
-    
-    # Combine heuristic score with evidence similarity
-    if similarity > 0.0:
-        # Weight evidence similarity higher (70%) than heuristic (30%)
-        final_score = 0.7 * similarity + 0.3 * score
-        
-        # Update verdict based on similarity
-        if similarity > 0.7:
-            verdict = "SUPPORTED"
-        elif similarity < 0.3:
-            verdict = "REFUTED"
+    # prepare evidence only for factual claims
+    evidence = []
+    similarity = 0.0
+    final_score = score  # fallback
+
+    if factual:
+        keyword = extract_entity(claim)
+        wiki = get_wikipedia_evidence(keyword)
+        evidence = [wiki]
+
+        # Calculate similarity between claim and evidence
+        similarity = evidence_similarity(claim, wiki.get("text", ""))
+
+        # Combine heuristic score with evidence similarity
+        if similarity > 0.0:
+            final_score = 0.7 * similarity + 0.3 * score
+
+            # Update verdict based on similarity thresholds
+            if similarity > 0.7:
+                verdict = "SUPPORTED"
+            elif similarity < 0.3:
+                verdict = "REFUTED"
+            else:
+                verdict = "NOT_ENOUGH_INFO"
         else:
-            verdict = "NOT_ENOUGH_INFO"
+            final_score = score
     else:
-        final_score = score
+        # Non-factual: return heuristic result without evidence
+        explanation = (
+            f"Non-factual or personal/question claim. Heuristic (pos={pos_hits}, neg={neg_hits}). "
+            f"Keyword (fallback): {extract_entity_fallback(claim)}"
+        )
+        logger.info("Non-factual path: %s", explanation)
+        return {
+            "verdict": verdict,
+            "score": round(score, 3),
+            "evidence": [],
+            "explanation": explanation,
+        }
 
     explanation = (
         f"Verdict for claim: {claim[:200]} | "
@@ -188,3 +253,4 @@ def verify_text(req: ClaimReq):
         "evidence": evidence,
         "explanation": explanation,
     }
+
