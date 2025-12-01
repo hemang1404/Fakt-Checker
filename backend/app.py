@@ -4,6 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 import re
 import logging
+from time import perf_counter
+from functools import lru_cache
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger= logging.getLogger(__name__)
 
