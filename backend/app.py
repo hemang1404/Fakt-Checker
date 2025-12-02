@@ -1,3 +1,4 @@
+from tracemalloc import start
 from fastapi import FastAPI
 from pydantic import BaseModel, validator
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,6 +80,13 @@ def get_wikipedia_evidence(query: str):
         pass
 
     return {"source": None, "text": "No relevant evidence found", "score": 0.0}
+
+# Small in-memory cache to avoid repeated Wikipedia calls for the same query
+@lru_cache(maxsize=256)
+def get_wikipedia_evidence_cached(query: str):
+    # lru_cache requires hashable args and works well for short query strings
+    return get_wikipedia_evidence(query)
+
 
 def evidence_similarity(claim: str, evidence_text: str) -> float:
     global sbert
@@ -175,6 +183,8 @@ def health_check():
 @app.post("/api/verify/text")
 def verify_text(req: ClaimReq):
     claim = req.claim.strip()
+    start = perf_counter()
+
     if not claim:
         return {"verdict": "NOT_ENOUGH_INFO", "score": 0.0,
                 "evidence": [], "explanation": "Empty claim."}
@@ -210,7 +220,7 @@ def verify_text(req: ClaimReq):
 
     if factual:
         keyword = extract_entity(claim)
-        wiki = get_wikipedia_evidence(keyword)
+        wiki = get_wikipedia_evidence_cached(keyword)
         evidence = [wiki]
 
         # Calculate similarity between claim and evidence
@@ -236,12 +246,16 @@ def verify_text(req: ClaimReq):
             f"Keyword (fallback): {extract_entity_fallback(claim)}"
         )
         logger.info("Non-factual path: %s", explanation)
+        elapsed = perf_counter() - start
+        logger.info("Processed non-factual request in %.3fs | verdict=%s", elapsed, verdict)
         return {
             "verdict": verdict,
             "score": round(score, 3),
             "evidence": [],
             "explanation": explanation,
-        }
+            }
+
+        
 
     explanation = (
         f"Verdict for claim: {claim[:200]} | "
@@ -250,6 +264,10 @@ def verify_text(req: ClaimReq):
         f"Keyword: {keyword}"
     )
 
+    elapsed = perf_counter() - start
+    logger.info("Processed factual request in %.3fs | verdict=%s | similarity=%.3f", elapsed, verdict, similarity)
+
+    
     return {
         "verdict": verdict,
         "score": round(final_score, 3),
