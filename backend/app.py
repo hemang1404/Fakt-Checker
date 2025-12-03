@@ -14,10 +14,22 @@ logger= logging.getLogger(__name__)
 # Sentence transformers for similarity (lazy loading)
 try:
     from sentence_transformers import SentenceTransformer, util
-    sbert = None  # Will be loaded on first use
 except Exception:
     SentenceTransformer = None
     util = None
+
+# Optional: eager-load SBERT at startup to avoid first-call delay.
+# WARNING: this increases startup time and memory usage.
+sbert = None
+try:
+    if SentenceTransformer is not None:
+        logger.info("Preloading SBERT model (this may take a few seconds)...")
+        sbert = SentenceTransformer('all-MiniLM-L6-v2')
+        logger.info("SBERT preloaded.")
+except Exception:
+    logger.exception("SBERT preload failed; will lazy-load on first use.")
+    sbert = None
+
 
 # Optional spaCy entity extraction
 try:
