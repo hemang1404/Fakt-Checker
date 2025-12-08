@@ -168,6 +168,7 @@ class ClaimReq(BaseModel):
     claim: str
     
     @validator('claim')
+    @classmethod
     def validate_claim(cls, v):
         v = v.strip()
         if not v:
