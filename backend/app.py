@@ -1,10 +1,10 @@
-from tracemalloc import start
 from fastapi import FastAPI
 from pydantic import BaseModel, validator
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import re
 import logging
+from urllib.parse import quote_plus
 from time import perf_counter
 from functools import lru_cache
 # Setup logging
@@ -71,7 +71,6 @@ def get_wikipedia_evidence(query: str):
         return {"source": None, "text": "No relevant evidence found", "score": 0.0}
 
     try:
-        from urllib.parse import quote_plus
         q = quote_plus(query)
     except Exception:
         q = query.replace(" ", "%20")
