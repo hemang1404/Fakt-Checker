@@ -67,8 +67,9 @@ def extract_entity(text: str) -> str:
 
 
 def get_wikipedia_evidence(query: str):
+    """Fetch evidence from Wikipedia API."""
     if not query:
-        return {"source": None, "text": "No relevant evidence found", "score": 0.0}
+        return {"source": "Wikipedia", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
 
     try:
         q = quote_plus(query)
@@ -83,14 +84,74 @@ def get_wikipedia_evidence(query: str):
         if response.status_code == 200:
             data = response.json()
             return {
-                "source": data.get("content_urls", {}).get("desktop", {}).get("page", search_url),
+                "source": "Wikipedia",
+                "url": data.get("content_urls", {}).get("desktop", {}).get("page", search_url),
                 "text": data.get("extract", "No extract found"),
-                "score": 0.6,
+                "similarity": 0.0,  # Will be calculated later
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Wikipedia API error: {e}")
 
-    return {"source": None, "text": "No relevant evidence found", "score": 0.0}
+    return {"source": "Wikipedia", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
+
+
+def get_britannica_evidence(query: str):
+    """Fetch evidence from Encyclopedia Britannica (placeholder for future implementation)."""
+    # TODO: Implement Britannica API when available
+    return {"source": "Britannica", "url": None, "text": "Source not yet implemented", "similarity": 0.0}
+
+
+def get_multiple_evidence_sources(query: str):
+    """Fetch evidence from multiple sources."""
+    sources = []
+    
+    # Wikipedia
+    wiki = get_wikipedia_evidence(query)
+    if wiki["text"] and wiki["text"] != "No relevant evidence found":
+        sources.append(wiki)
+    
+    # Add more sources here as needed
+    # britannica = get_britannica_evidence(query)
+    # if britannica["text"] and britannica["text"] != "Source not yet implemented":
+    #     sources.append(britannica)
+    
+    return sources
+
+
+def calculate_evidence_verdict(similarities: list[float]) -> tuple[str, float]:
+    """
+    Determine verdict based on multiple evidence similarity scores.
+    Returns: (verdict, confidence_score)
+    """
+    if not similarities:
+        return "NOT_ENOUGH_INFO", 0.0
+    
+    avg_similarity = sum(similarities) / len(similarities)
+    
+    # Calculate confidence based on agreement between sources
+    if len(similarities) > 1:
+        # Standard deviation - lower means more agreement
+        variance = sum((s - avg_similarity) ** 2 for s in similarities) / len(similarities)
+        std_dev = variance ** 0.5
+        # Higher agreement = higher confidence
+        agreement_factor = max(0.0, 1.0 - std_dev)
+    else:
+        # Single source - confidence based on similarity strength
+        agreement_factor = 0.8
+    
+    # Determine verdict based on average similarity
+    if avg_similarity > 0.65:
+        verdict = "SUPPORTED"
+        confidence = avg_similarity * agreement_factor
+    elif avg_similarity < 0.35:
+        verdict = "REFUTED"
+        confidence = (1.0 - avg_similarity) * agreement_factor
+    else:
+        verdict = "NOT_ENOUGH_INFO"
+        confidence = 0.5 * agreement_factor
+    
+    return verdict, round(confidence, 3)
+
 
 # Small in-memory cache to avoid repeated Wikipedia calls for the same query
 @lru_cache(maxsize=256)
@@ -227,63 +288,73 @@ def verify_text(req: ClaimReq):
 
     # prepare evidence only for factual claims
     evidence = []
-    similarity = 0.0
-    final_score = score  # fallback
+    confidence = 0.0
 
     if factual:
         keyword = extract_entity(claim)
-        wiki = get_wikipedia_evidence_cached(keyword)
-        evidence = [wiki]
-
-        # Calculate similarity between claim and evidence
-        similarity = evidence_similarity(claim, wiki.get("text", ""))
-
-        # Combine heuristic score with evidence similarity
-        if similarity > 0.0:
-            final_score = 0.7 * similarity + 0.3 * score
-
-            # Update verdict based on similarity thresholds
-            if similarity > 0.7:
-                verdict = "SUPPORTED"
-            elif similarity < 0.3:
-                verdict = "REFUTED"
+        logger.info(f"Extracted keyword: '{keyword}'")
+        
+        # Fetch evidence from multiple sources
+        evidence_sources = get_multiple_evidence_sources(keyword)
+        
+        if evidence_sources:
+            # Calculate similarity for each evidence source
+            similarities = []
+            for src in evidence_sources:
+                if src["text"] and src["text"] != "No relevant evidence found":
+                    sim = evidence_similarity(claim, src["text"])
+                    src["similarity"] = round(sim, 3)
+                    similarities.append(sim)
+                    logger.info(f"Source: {src['source']} | Similarity: {sim:.3f}")
+            
+            # Determine verdict based on all evidence
+            if similarities:
+                verdict, confidence = calculate_evidence_verdict(similarities)
+                evidence = evidence_sources
             else:
+                # No valid evidence found
                 verdict = "NOT_ENOUGH_INFO"
+                confidence = 0.0
+                evidence = []
         else:
-            final_score = score
+            # No evidence sources returned
+            verdict = "NOT_ENOUGH_INFO"
+            confidence = 0.0
+            evidence = []
+        
+        explanation = (
+            f"Analyzed factual claim: '{claim[:150]}' | "
+            f"Keyword: '{keyword}' | "
+            f"Evidence sources: {len(evidence)} | "
+            f"Verdict: {verdict} | "
+            f"Confidence: {confidence}"
+        )
+        
     else:
         # Non-factual: return heuristic result without evidence
+        # Use heuristic for confidence on non-factual claims
+        confidence = round(abs(score - 0.5) * 2, 3)  # 0 = uncertain, 1 = very certain
+        
         explanation = (
-            f"Non-factual or personal/question claim. Heuristic (pos={pos_hits}, neg={neg_hits}). "
-            f"Keyword (fallback): {extract_entity_fallback(claim)}"
+            f"Non-factual or personal/question claim detected. "
+            f"Heuristic analysis: positive={pos_hits}, negative={neg_hits}, doubt={doubt_hits}. "
+            f"No evidence sources consulted."
         )
         logger.info("Non-factual path: %s", explanation)
-        elapsed = perf_counter() - start
-        logger.info("Processed non-factual request in %.3fs | verdict=%s", elapsed, verdict)
-        return {
-            "verdict": verdict,
-            "score": round(score, 3),
-            "evidence": [],
-            "explanation": explanation,
-            }
-
-        
-
-    explanation = (
-        f"Verdict for claim: {claim[:200]} | "
-        f"Heuristic (pos={pos_hits}, neg={neg_hits}) | "
-        f"Evidence similarity: {similarity:.2f} | "
-        f"Keyword: {keyword}"
-    )
 
     elapsed = perf_counter() - start
-    logger.info("Processed factual request in %.3fs | verdict=%s | similarity=%.3f", elapsed, verdict, similarity)
-
+    logger.info("Processed request in %.3fs | factual=%s | verdict=%s | confidence=%.3f", 
+                elapsed, factual, verdict, confidence)
     
     return {
         "verdict": verdict,
-        "score": round(final_score, 3),
+        "confidence": confidence,
         "evidence": evidence,
         "explanation": explanation,
+        "metadata": {
+            "factual": factual,
+            "processing_time_ms": round(elapsed * 1000, 2),
+            "sources_consulted": len(evidence)
+        }
     }
 
