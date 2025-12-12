@@ -20,15 +20,8 @@ except Exception:
 
 # Optional: eager-load SBERT at startup to avoid first-call delay.
 # WARNING: this increases startup time and memory usage.
+# Disabled to avoid model registry conflicts
 sbert = None
-try:
-    if SentenceTransformer is not None:
-        logger.info("Preloading SBERT model (this may take a few seconds)...")
-        sbert = SentenceTransformer('all-MiniLM-L6-v2')
-        logger.info("SBERT preloaded.")
-except Exception:
-    logger.exception("SBERT preload failed; will lazy-load on first use.")
-    sbert = None
 
 
 # Optional spaCy entity extraction
