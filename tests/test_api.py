@@ -14,7 +14,8 @@ def test_verify_text_endpoint_supported():
     assert res.status_code == 200
     data = res.json()
     assert "verdict" in data
-    assert "score" in data
+    assert "confidence" in data
+    assert "metadata" in data
 
 def test_verify_text_non_factual():
     res = client.post("/api/verify/text", json={"claim": "I want to go to India"})

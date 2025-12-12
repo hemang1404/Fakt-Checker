@@ -75,7 +75,7 @@ def test_wikipedia_cache_calls_once(monkeypatch):
 
     def fake_get_wiki(q):
         calls["count"] += 1
-        return {"source": f"https://example/{q}", "text": f"txt-{q}", "score": 0.5}
+        return {"source": "Wikipedia", "url": f"https://example/{q}", "text": f"txt-{q}", "similarity": 0.5}
 
     # Patch the underlying non-cached function (name used in your app)
     monkeypatch.setattr("backend.app.get_wikipedia_evidence", fake_get_wiki)
@@ -92,7 +92,7 @@ def test_wikipedia_cache_calls_once(monkeypatch):
 # Optional: smoke test speed for repeated requests (no model load)
 # -----------------------
 @patch("backend.app.sbert", None)
-def test_multiple_quick_requests_no_model(mock_sbert):
+def test_multiple_quick_requests_no_model():
     # Ensure we can make many quick calls without S-BERT present (avoids model download)
     for _ in range(3):
         res = client.post("/api/verify/text", json={"claim": "The sky is blue"})

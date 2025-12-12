@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import re
@@ -227,7 +227,7 @@ def is_factual(text: str) -> bool:
 class ClaimReq(BaseModel):
     claim: str
     
-    @validator('claim')
+    @field_validator('claim')
     @classmethod
     def validate_claim(cls, v):
         v = v.strip()
