@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fakt-Checker - AI-Powered Fact Verification</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Fakt-Checker</h1>
+            <p class="tagline">AI-Powered Fact Verification System</p>
+        </header>
+
+        <main>
+            <div class="input-section">
+                <textarea 
+                    id="claimInput" 
+                    placeholder="Enter a claim to fact-check... (e.g., 'Paris is the capital of France')"
+                    rows="4"
+                ></textarea>
+                <button id="checkButton" onclick="checkClaim()">
+                    <span id="buttonText">Check Claim</span>
+                    <span id="buttonLoader" class="loader" style="display: none;"></span>
+                </button>
+            </div>
+
+            <div id="resultSection" class="result-section" style="display: none;">
+                <div class="verdict-card">
+                    <div class="verdict-header">
+                        <h2>Verdict</h2>
+                        <span id="verdictBadge" class="verdict-badge"></span>
+                    </div>
+                    <div class="confidence-bar">
+                        <label>Confidence Score</label>
+                        <div class="progress-bar">
+                            <div id="confidenceProgress" class="progress-fill"></div>
+                        </div>
+                        <span id="confidenceValue" class="confidence-value"></span>
+                    </div>
+                </div>
+
+                <div id="evidenceSection" class="evidence-section">
+                    <h3>Evidence Sources</h3>
+                    <div id="evidenceList" class="evidence-list"></div>
+                </div>
+
+                <div class="explanation-section">
+                    <h3>Analysis Details</h3>
+                    <p id="explanation" class="explanation-text"></p>
+                </div>
+
+                <div class="metadata-section">
+                    <div class="metadata-item">
+                        <span class="metadata-label">Factual Claim:</span>
+                        <span id="metaFactual" class="metadata-value"></span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">Sources Consulted:</span>
+                        <span id="metaSources" class="metadata-value"></span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">Processing Time:</span>
+                        <span id="metaTime" class="metadata-value"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorSection" class="error-section" style="display: none;">
+                <p id="errorMessage"></p>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by Wikipedia API & Sentence Transformers | <a href="https://github.com/hemang1404/Fakt-Checker" target="_blank">GitHub</a></p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
