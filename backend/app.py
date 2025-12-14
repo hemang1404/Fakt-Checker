@@ -4,12 +4,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 import re
 import logging
+import os
 from urllib.parse import quote_plus
 from time import perf_counter
 from functools import lru_cache
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger= logging.getLogger(__name__)
+
+# Google Fact Check API Key (optional - set as environment variable)
+GOOGLE_FACT_CHECK_API_KEY = os.environ.get("GOOGLE_FACT_CHECK_API_KEY")
 
 # Sentence transformers for similarity (lazy loading)
 try:
@@ -88,25 +92,188 @@ def get_wikipedia_evidence(query: str):
     return {"source": "Wikipedia", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
 
 
-def get_britannica_evidence(query: str):
-    """Fetch evidence from Encyclopedia Britannica (placeholder for future implementation)."""
-    # TODO: Implement Britannica API when available
-    return {"source": "Britannica", "url": None, "text": "Source not yet implemented", "similarity": 0.0}
+def get_dbpedia_evidence(query: str):
+    """Fetch evidence from DBpedia SPARQL endpoint."""
+    if not query:
+        return {"source": "DBpedia", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
+    
+    # DBpedia SPARQL endpoint
+    sparql_url = "http://dbpedia.org/sparql"
+    
+    # Simple query to get abstract about the entity
+    sparql_query = f"""
+    PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX dbr: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    
+    SELECT ?abstract ?resource WHERE {{
+        ?resource rdfs:label ?label .
+        ?resource dbo:abstract ?abstract .
+        FILTER (lang(?abstract) = 'en')
+        FILTER (regex(?label, "^{query}$", "i"))
+    }} LIMIT 1
+    """
+    
+    try:
+        response = requests.get(
+            sparql_url,
+            params={"query": sparql_query, "format": "json"},
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", {}).get("bindings", [])
+            
+            if results:
+                abstract = results[0].get("abstract", {}).get("value", "")
+                resource_url = results[0].get("resource", {}).get("value", "")
+                
+                # Limit abstract length
+                if len(abstract) > 500:
+                    abstract = abstract[:500] + "..."
+                
+                return {
+                    "source": "DBpedia",
+                    "url": resource_url,
+                    "text": abstract,
+                    "similarity": 0.0,
+                }
+    except Exception as e:
+        logger.warning(f"DBpedia API error: {e}")
+    
+    return {"source": "DBpedia", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
 
 
-def get_multiple_evidence_sources(query: str):
+def get_wikidata_evidence(query: str):
+    """Fetch evidence from Wikidata."""
+    if not query:
+        return {"source": "Wikidata", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
+    
+    try:
+        # Search for entity
+        search_url = "https://www.wikidata.org/w/api.php"
+        search_params = {
+            "action": "wbsearchentities",
+            "search": query,
+            "language": "en",
+            "format": "json",
+            "limit": 1
+        }
+        
+        response = requests.get(search_url, params=search_params, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("search", [])
+            
+            if results:
+                entity = results[0]
+                entity_id = entity.get("id")
+                label = entity.get("label", "")
+                description = entity.get("description", "")
+                
+                # Get more details about the entity
+                if entity_id:
+                    entity_url = f"https://www.wikidata.org/wiki/{entity_id}"
+                    text = f"{label}: {description}" if description else label
+                    
+                    return {
+                        "source": "Wikidata",
+                        "url": entity_url,
+                        "text": text,
+                        "similarity": 0.0,
+                    }
+    except Exception as e:
+        logger.warning(f"Wikidata API error: {e}")
+    
+    return {"source": "Wikidata", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
+
+
+def get_google_factcheck_evidence(claim: str):
+    """Fetch evidence from Google Fact Check API."""
+    if not claim or not GOOGLE_FACT_CHECK_API_KEY:
+        if not GOOGLE_FACT_CHECK_API_KEY:
+            logger.info("Google Fact Check API key not configured")
+        return {"source": "Google Fact Check", "url": None, "text": "API key not configured", "similarity": 0.0}
+    
+    try:
+        url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+        params = {
+            "query": claim,
+            "key": GOOGLE_FACT_CHECK_API_KEY,
+            "languageCode": "en"
+        }
+        
+        response = requests.get(url, params=params, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            claims = data.get("claims", [])
+            
+            if claims:
+                # Get the first claim check
+                claim_review = claims[0]
+                text_parts = []
+                
+                # Get claim text
+                claim_text = claim_review.get("text", "")
+                if claim_text:
+                    text_parts.append(f"Claim: {claim_text}")
+                
+                # Get review verdict
+                reviews = claim_review.get("claimReview", [])
+                if reviews:
+                    review = reviews[0]
+                    rating = review.get("textualRating", "")
+                    publisher = review.get("publisher", {}).get("name", "")
+                    review_url = review.get("url", "")
+                    
+                    if rating:
+                        text_parts.append(f"Rating: {rating}")
+                    if publisher:
+                        text_parts.append(f"by {publisher}")
+                    
+                    return {
+                        "source": "Google Fact Check",
+                        "url": review_url or None,
+                        "text": " | ".join(text_parts) if text_parts else "Fact check found",
+                        "similarity": 0.0,
+                    }
+        
+        elif response.status_code == 429:
+            logger.warning("Google Fact Check API rate limit exceeded")
+        
+    except Exception as e:
+        logger.warning(f"Google Fact Check API error: {e}")
+    
+    return {"source": "Google Fact Check", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
+
+
+def get_multiple_evidence_sources(query: str, full_claim: str = ""):
     """Fetch evidence from multiple sources."""
     sources = []
     
-    # Wikipedia
+    # Wikipedia (primary source)
     wiki = get_wikipedia_evidence(query)
     if wiki["text"] and wiki["text"] != "No relevant evidence found":
         sources.append(wiki)
     
-    # Add more sources here as needed
-    # britannica = get_britannica_evidence(query)
-    # if britannica["text"] and britannica["text"] != "Source not yet implemented":
-    #     sources.append(britannica)
+    # DBpedia (structured data)
+    dbpedia = get_dbpedia_evidence(query)
+    if dbpedia["text"] and dbpedia["text"] != "No relevant evidence found":
+        sources.append(dbpedia)
+    
+    # Wikidata (knowledge base)
+    wikidata = get_wikidata_evidence(query)
+    if wikidata["text"] and wikidata["text"] != "No relevant evidence found":
+        sources.append(wikidata)
+    
+    # Google Fact Check (fact-checking specific)
+    if full_claim and GOOGLE_FACT_CHECK_API_KEY:
+        google_fc = get_google_factcheck_evidence(full_claim)
+        if google_fc["text"] and google_fc["text"] not in ["No relevant evidence found", "API key not configured"]:
+            sources.append(google_fc)
     
     return sources
 
@@ -287,8 +454,8 @@ def verify_text(req: ClaimReq):
         keyword = extract_entity(claim)
         logger.info(f"Extracted keyword: '{keyword}'")
         
-        # Fetch evidence from multiple sources
-        evidence_sources = get_multiple_evidence_sources(keyword)
+        # Fetch evidence from multiple sources (pass full claim for Google Fact Check)
+        evidence_sources = get_multiple_evidence_sources(keyword, full_claim=claim)
         
         if evidence_sources:
             # Calculate similarity for each evidence source
