@@ -12,8 +12,10 @@ from functools import lru_cache
 logging.basicConfig(level=logging.INFO)
 logger= logging.getLogger(__name__)
 
-# Google Fact Check API Key (optional - set as environment variable)
+# Google API Keys (optional - set as environment variable)
 GOOGLE_FACT_CHECK_API_KEY = os.environ.get("GOOGLE_FACT_CHECK_API_KEY")
+GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY")
+GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
 
 # Sentence transformers for similarity (lazy loading)
 try:
@@ -250,6 +252,62 @@ def get_google_factcheck_evidence(claim: str):
     return {"source": "Google Fact Check", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
 
 
+def get_google_search_evidence(query: str):
+    """Fetch evidence from Google Custom Search API."""
+    if not query or not GOOGLE_SEARCH_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
+        if not GOOGLE_SEARCH_API_KEY or not GOOGLE_SEARCH_ENGINE_ID:
+            logger.info("Google Search API key or Search Engine ID not configured")
+        return {"source": "Google Search", "url": None, "text": "API key not configured", "similarity": 0.0}
+    
+    try:
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            "key": GOOGLE_SEARCH_API_KEY,
+            "cx": GOOGLE_SEARCH_ENGINE_ID,
+            "q": query,
+            "num": 3  # Get top 3 results
+        }
+        
+        response = requests.get(url, params=params, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            items = data.get("items", [])
+            
+            if items:
+                # Combine snippets from top results
+                snippets = []
+                urls = []
+                
+                for item in items[:3]:
+                    snippet = item.get("snippet", "")
+                    link = item.get("link", "")
+                    title = item.get("title", "")
+                    
+                    if snippet:
+                        snippets.append(f"{title}: {snippet}")
+                    if link:
+                        urls.append(link)
+                
+                combined_text = " | ".join(snippets) if snippets else "Results found"
+                primary_url = urls[0] if urls else None
+                
+                return {
+                    "source": "Google Search",
+                    "url": primary_url,
+                    "text": combined_text[:500],  # Limit length
+                    "similarity": 0.0,
+                }
+        
+        elif response.status_code == 429:
+            logger.warning("Google Search API rate limit exceeded")
+        
+    except Exception as e:
+        logger.warning(f"Google Search API error: {e}")
+    
+    return {"source": "Google Search", "url": None, "text": "No relevant evidence found", "similarity": 0.0}
+
+
 def get_multiple_evidence_sources(query: str, full_claim: str = ""):
     """Fetch evidence from multiple sources."""
     sources = []
@@ -268,6 +326,12 @@ def get_multiple_evidence_sources(query: str, full_claim: str = ""):
     wikidata = get_wikidata_evidence(query)
     if wikidata["text"] and wikidata["text"] != "No relevant evidence found":
         sources.append(wikidata)
+    
+    # Google Search (web search results)
+    if GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID:
+        google_search = get_google_search_evidence(full_claim or query)
+        if google_search["text"] and google_search["text"] not in ["No relevant evidence found", "API key not configured"]:
+            sources.append(google_search)
     
     # Google Fact Check (fact-checking specific)
     if full_claim and GOOGLE_FACT_CHECK_API_KEY:
