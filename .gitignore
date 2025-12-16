@@ -20,3 +20,7 @@ Thumbs.db
 
 # Temporary test files
 tmp_*.py
+
+# Environment variables (API keys)
+.env
+*.env

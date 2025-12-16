@@ -8,6 +8,11 @@ import os
 from urllib.parse import quote_plus
 from time import perf_counter
 from functools import lru_cache
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger= logging.getLogger(__name__)
