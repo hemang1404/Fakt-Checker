@@ -17,10 +17,11 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger= logging.getLogger(__name__)
 
-# Google API Keys (optional - set as environment variable)
+# API Keys (optional - set as environment variable)
 GOOGLE_FACT_CHECK_API_KEY = os.environ.get("GOOGLE_FACT_CHECK_API_KEY")
 GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY")
 GOOGLE_SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 # Sentence transformers for similarity (lazy loading)
 try:
@@ -44,6 +45,13 @@ try:
         nlp = None
 except Exception:
     nlp = None
+
+# Optional Groq LLM for claim analysis
+try:
+    from groq import Groq
+    groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+except Exception:
+    groq_client = None
 
 
 def extract_entity_fallback(text: str, max_tokens: int = 3) -> str:
@@ -413,12 +421,38 @@ def evidence_similarity(claim: str, evidence_text: str) -> float:
 
 def is_factual(text: str) -> bool:
     """
-    Simple rule-based detector for factual vs. personal/question claims.
-    Returns True when the text *looks like* a factual assertion we can check.
+    Enhanced claim detector using LLM (Groq) if available, with rule-based fallback.
+    Returns True when the text looks like a factual assertion we can check.
     """
     if not text:
         return False
 
+    # Try LLM-powered detection first
+    if groq_client:
+        try:
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a fact-checking assistant. Analyze if the given text contains a verifiable factual claim (not an opinion, question, or personal statement). Respond with only 'YES' or 'NO'."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Does this contain a verifiable factual claim?\n\n\"{text}\""
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=10
+            )
+            
+            answer = response.choices[0].message.content.strip().upper()
+            logger.info(f"LLM claim analysis: '{text[:50]}...' -> {answer}")
+            return "YES" in answer
+        except Exception as e:
+            logger.warning(f"Groq LLM error, falling back to rules: {e}")
+    
+    # Fallback: Rule-based detector
     c = text.strip().lower()
 
     # Ends with a question mark -> not factual
