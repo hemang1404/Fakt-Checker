@@ -204,3 +204,64 @@ def test_confidence_with_multiple_sources(mock_evidence):
     assert data["confidence"] >= 0.0  # Has some confidence value
     # Verdict can be any based on the logic
     assert data["verdict"] in ("SUPPORTED", "NOT_ENOUGH_INFO", "REFUTED")
+
+# -----------------------
+# Test Groq LLM Integration
+# -----------------------
+def test_groq_client_initialization():
+    """Test that Groq client initializes when API key is present"""
+    from backend.app import groq_client, GROQ_API_KEY
+    
+    if GROQ_API_KEY:
+        assert groq_client is not None
+    else:
+        assert groq_client is None
+
+@patch("backend.app.groq_client")
+def test_is_factual_with_llm(mock_groq):
+    """Test is_factual uses LLM when available"""
+    # Mock Groq response
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "YES"
+    
+    mock_groq.chat.completions.create.return_value = mock_response
+    
+    from backend.app import is_factual
+    
+    result = is_factual("Paris is the capital of France")
+    assert result == True
+    assert mock_groq.chat.completions.create.called
+
+@patch("backend.app.groq_client")
+def test_is_factual_llm_fallback_on_error(mock_groq):
+    """Test that is_factual falls back to rules when LLM fails"""
+    # Mock LLM to raise exception
+    mock_groq.chat.completions.create.side_effect = Exception("API Error")
+    
+    from backend.app import is_factual
+    
+    # Should fall back to rule-based detection
+    assert is_factual("Paris is the capital of France") == True
+    assert is_factual("I want to go to India") == False
+
+@patch("backend.app.groq_client", None)
+def test_is_factual_without_llm():
+    """Test that is_factual works with rule-based fallback when no LLM"""
+    from backend.app import is_factual
+    
+    # Should use rule-based detection
+    assert is_factual("The Sun is a star") == True
+    assert is_factual("I think the sky is blue") == False
+    assert is_factual("Should I go to school?") == False
+
+def test_llm_claim_analysis_integration():
+    """Test end-to-end claim analysis with LLM"""
+    # This test runs against real API if key is present
+    res = client.post("/api/verify/text", json={"claim": "The Earth orbits the Sun"})
+    assert res.status_code == 200
+    data = res.json()
+    
+    # Should be detected as factual claim
+    assert isinstance(data["evidence"], list)
+    assert "verdict" in data
