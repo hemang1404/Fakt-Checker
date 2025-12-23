@@ -17,13 +17,17 @@
             <div class="input-section">
                 <textarea 
                     id="claimInput" 
-                    placeholder="Enter a claim to fact-check... (e.g., 'Paris is the capital of France')"
+                    placeholder="Enter a claim to fact-check... (e.g., 'Paris is the capital of France')&#10;&#10;💡 Tip: Press Enter to check"
                     rows="4"
                 ></textarea>
                 <button id="checkButton" onclick="checkClaim()">
                     <span id="buttonText">Check Claim</span>
                     <span id="buttonLoader" class="loader" style="display: none;"></span>
                 </button>
+                <div id="loadingMessage" class="loading-message" style="display: none;">
+                    <div class="loading-spinner"></div>
+                    <span>Analyzing claim with AI and checking multiple sources...</span>
+                </div>
             </div>
 
             <div id="resultSection" class="result-section" style="display: none;">

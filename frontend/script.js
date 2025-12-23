@@ -160,10 +160,15 @@ function setLoading(isLoading) {
     const button = document.getElementById('checkButton');
     const buttonText = document.getElementById('buttonText');
     const buttonLoader = document.getElementById('buttonLoader');
+    const loadingMessage = document.getElementById('loadingMessage');
     
     button.disabled = isLoading;
     buttonText.style.display = isLoading ? 'none' : 'inline';
     buttonLoader.style.display = isLoading ? 'inline-block' : 'none';
+    loadingMessage.style.display = isLoading ? 'flex' : 'none';
+    
+    // Disable textarea while loading
+    document.getElementById('claimInput').disabled = isLoading;
 }
 
 // Allow Enter key to submit (Ctrl+Enter for new line)
