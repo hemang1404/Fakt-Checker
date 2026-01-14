@@ -5,12 +5,10 @@ pydantic>=2.12.0
 python-dotenv>=1.0.0
 groq>=0.4.0
 
-# NLP & similarity - using latest versions with pre-built wheels
-sentence-transformers==2.7.0
-torch==2.5.1
-spacy==3.7.2
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
-
-# Pre-built wheels to avoid compilation issues
-numpy>=1.26.0
-scipy>=1.13.0
+# Optional ML dependencies - install separately if needed
+# These require compilation and may fail on free hosting tiers
+# The app works without them using fallback methods
+# 
+# To install locally:
+# pip install sentence-transformers torch spacy
+# python -m spacy download en_core_web_sm
