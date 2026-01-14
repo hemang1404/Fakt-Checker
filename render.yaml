@@ -1,3 +1,4 @@
+# Fakt-Checker API Deployment Configuration
 services:
   - type: web
     name: fakt-checker-api
