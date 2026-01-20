@@ -1,6 +1,12 @@
+
 # 🔍 Fakt-Checker
 
+
 An AI-powered fact-checking system that verifies claims using multiple evidence sources and LLM-enhanced analysis.
+
+**Live Demo:** [Your Deployed App URL Here]
+
+**Deployment Status:** ✅ Backend live on Render (free tier, ML features disabled)
 
 ## ✨ Features
 
@@ -15,18 +21,19 @@ An AI-powered fact-checking system that verifies claims using multiple evidence 
   - Distinguishes facts from opinions with contextual understanding
   - Automatic fallback to rule-based detection
   
+
 - **Smart Confidence Scoring**: Evidence-based verdicts with multi-source agreement
-  
-- **Semantic Similarity**: SBERT embeddings for accurate claim-evidence matching
+- **Optional ML Features**: Semantic similarity (SBERT) and entity extraction (spaCy) available locally or on paid hosting
 
 ## 🛠️ Tech Stack
 
+
 **Backend:**
 - FastAPI (async Python web framework)
-- Sentence Transformers (semantic similarity)
-- spaCy (entity extraction)
 - Groq API (LLM integration)
 - Pydantic v2 (data validation)
+- Sentence Transformers (semantic similarity, optional)
+- spaCy (entity extraction, optional)
 
 **Frontend:**
 - Vanilla HTML/CSS/JavaScript
@@ -59,9 +66,16 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 ```
 
+
 3. **Install dependencies:**
 ```bash
 pip install -r backend/requirements.txt
+```
+
+**Note:** ML features (semantic similarity, advanced NER) require extra dependencies. On free hosting, these are disabled by default. To enable locally:
+```bash
+pip install sentence-transformers torch spacy
+python -m spacy download en_core_web_sm
 ```
 
 4. **Set up environment variables (optional but recommended):**
@@ -80,10 +94,18 @@ cp backend/.env.example backend/.env
 uvicorn backend.app:app --reload --port 8000
 ```
 
+
 6. **Open the frontend:**
 ```
 Open frontend/index.html in your browser
 ```
+
+### Deploying the Frontend
+
+You can deploy the frontend to Vercel, Netlify, or any static host:
+1. Push the frontend folder to a new repo or select it in Vercel.
+2. Set the API URL in `frontend/script.js` to your deployed backend.
+3. Deploy and share your live demo!
 
 ## 📡 API Documentation
 
@@ -98,6 +120,7 @@ Open frontend/index.html in your browser
 }
 ```
 
+
 **Response:**
 ```json
 {
@@ -107,8 +130,8 @@ Open frontend/index.html in your browser
     {
       "source": "Wikipedia",
       "text": "Paris is the capital and most populous city...",
-      "url": "https://en.wikipedia.org/wiki/Paris",
-      "similarity": 0.92
+      "url": "https://en.wikipedia.org/wiki/Paris"
+      // "similarity": 0.92   // Only present if ML is enabled
     }
   ],
   "explanation": "High confidence based on 3 agreeing sources",
@@ -130,15 +153,23 @@ pytest tests/ -v
 
 All 20 tests should pass.
 
+
 ## 📊 Project Status
 
 - ✅ Multi-source evidence aggregation (5 sources)
 - ✅ LLM-powered claim analysis (Groq)
 - ✅ Frontend demo interface
 - ✅ Comprehensive test suite (20 tests)
-- 🚧 Deployment (coming soon)
+- ✅ Deployment (live)
 - 🚧 Chrome browser extension (planned)
 - 🚧 Database for claim history (planned)
+
+
+## ⚠️ Limitations
+
+- ML features (semantic similarity, advanced NER) are **disabled on free hosting** due to build resource limits.
+- All core features (multi-source evidence, LLM analysis, verdicts) work without ML dependencies.
+- For full features, run locally or upgrade hosting.
 
 ## 🔮 Future Plans
 
